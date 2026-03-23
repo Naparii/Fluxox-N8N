@@ -1,0 +1,548 @@
+{
+  "name": "Post Generator Dashboard",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "node-01",
+      "name": "Receber Mensagem",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": ""
+    },
+    {
+      "parameters": {
+        "jsCode": "var item = $input.first().json;\nvar message = item.message || (item.body && item.body.message) || '';\nvar history = item.history || (item.body && item.body.history) || [];\nvar sessionId = item.sessionId || (item.body && item.body.sessionId) || 'anon-' + Date.now();\nvar forceIdea = item.forceIdea || (item.body && item.body.forceIdea) || '';\nvar brandContext = item.brandContext || (item.body && item.body.brandContext) || '';\n\nif (message === 'GERAR_POST_AGORA') {\n  var idea = forceIdea.length > 0 ? forceIdea.slice(0, 400) : 'Post criativo para redes sociais';\n  var forcePayload = JSON.stringify({\n    model: 'google/gemini-3-flash-preview',\n    messages: [\n      { role: 'system', content: 'You MUST respond with ONLY this exact text and nothing else: APPROVED_IDEA: ' + idea },\n      { role: 'user', content: 'Generate the approved idea now.' }\n    ]\n  });\n  return [{ json: { sessionId: sessionId, message: message, payload: forcePayload } }];\n}\n\nvar systemPrompt = 'Voce e um especialista em marketing de conteudo para redes sociais, criando posts para empresas brasileiras.\\n\\nCAPACIDADES:\\n- Voce conversa com o usuario para entender o que ele quer\\n- Voce sugere ideias criativas de posts\\n- Voce GERA imagens reais diretamente no chat — NAO sugira ferramentas externas como Midjourney, Canva ou DALL-E\\n- Quando o usuario confirmar uma ideia, voce a aprova e a imagem e gerada automaticamente pelo sistema\\n\\nREGRA MAIS IMPORTANTE — COMO APROVAR UMA IDEIA:\\nQuando o usuario confirmar que quer gerar uma ideia (ex: \"sim\", \"gera\", \"quero essa\", \"pode gerar\", \"pf\", \"vai\", \"aprovado\"), voce DEVE imediatamente responder com:\\n\\nAPPROVED_IDEA: [descricao completa da ideia aprovada em 2-3 frases detalhando visual, cores e elementos]\\n\\nRESTRICAO IMPORTANTE: So e possivel gerar UMA imagem por vez. Se o usuario pedir multiplas ideias:\\n- Apresente as ideias numeradas\\n- Pergunte qual ele quer gerar PRIMEIRO\\n- Aprove a primeira com APPROVED_IDEA:\\n- Depois de gerada, pergunte se quer gerar a proxima\\n\\nQUANDO USAR APPROVED_IDEA:\\n- Usuario diz \"sim\", \"quero\", \"gera\", \"pode\", \"essa\", \"vai\", \"pfv\", \"pf\", \"aprovado\", ou qualquer confirmacao\\n- Usuario clica no botao de gerar\\n- Usuario pede para gerar diretamente\\n\\nNUNCA:\\n- Sugira Midjourney, DALL-E, Canva ou qualquer ferramenta externa — voce JA GERA a imagem aqui\\n- Fique explicando o que voce \"nao consegue fazer\" — voce CONSEGUE gerar imagens\\n- Dê prompts para o usuario usar em outro lugar\\n- Repita ideias sem gerar quando o usuario pediu para gerar\\n\\nTom: direto, criativo, linguagem brasileira informal.';\n\nif (brandContext) {\n  systemPrompt += '\\n\\nCONTEXTO DA MARCA DO CLIENTE:\\n' + brandContext + '\\n\\nConsidere estas diretrizes ao sugerir ideias de posts. Se houver descricoes de imagens de referencia acima, leve-as em conta ao descrever visuais e estilos para o post.';\n}\n\nvar messages = [{ role: 'system', content: systemPrompt }];\nfor (var i = 0; i < history.length; i++) {\n  messages.push({ role: history[i].role === 'assistant' ? 'assistant' : 'user', content: history[i].content });\n}\nmessages.push({ role: 'user', content: message });\n\nreturn [{ json: { sessionId: sessionId, message: message, payload: JSON.stringify({ model: 'google/gemini-3-flash-preview', messages: messages }) } }];"
+      },
+      "id": "node-02",
+      "name": "Preparar Chat",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        304,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": ""
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.payload }}",
+        "options": {}
+      },
+      "id": "node-03",
+      "name": "Chamar Gemini",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        608,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "r1",
+              "name": "responseText",
+              "value": "={{ $json.choices[0].message.content }}",
+              "type": "string"
+            },
+            {
+              "id": "r2",
+              "name": "sessionId",
+              "value": "={{ $('Preparar Chat').item.json.sessionId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-04",
+      "name": "Extrair Resposta",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        912,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.responseText }}",
+              "rightValue": "APPROVED_IDEA:",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node-05",
+      "name": "Ideia Aprovada?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e1",
+              "name": "approvedIdea",
+              "value": "={{ $json.responseText.split('APPROVED_IDEA:')[1]?.trim() }}",
+              "type": "string"
+            },
+            {
+              "id": "e2",
+              "name": "sessionId",
+              "value": "={{ $json.sessionId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-06",
+      "name": "Extrair Ideia",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1504,
+        -208
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ JSON.stringify({ type: 'message', content: $json.responseText }) }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "node-07",
+      "name": "Responder Conversa",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1504,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": ""
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ (function() {\n  var idea = $json.approvedIdea;\n  var ctx = $json.brandContext || '';\n  var prompt = (ctx ? ctx + '\\n\\n' : '')\n    + 'Create a detailed image generation prompt in English for a social media post about: ' + idea + '.'\n    + (ctx ? ' Respect the brand guidelines and visual references provided above.' : '')\n    + ' Respond with ONLY the prompt text. Style: professional photography or digital art, vibrant colors, social media ready, 1:1 ratio, no text overlays.';\n  return JSON.stringify({ model: 'google/gemini-3-flash-preview', messages: [{ role: 'user', content: prompt }] });\n})() }}",
+        "options": {}
+      },
+      "id": "node-08",
+      "name": "Gerar Prompt de Imagem",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1808,
+        -208
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "var resp = $input.first().json;\nvar imagePrompt = (resp.choices && resp.choices[0] && resp.choices[0].message) ? resp.choices[0].message.content.trim() : 'professional social media post, vibrant colors';\nvar prev = $('Extrair Ideia').first().json;\nvar incoming = $('Receber Mensagem').first().json;\nreturn [{ json: { imagePrompt: imagePrompt, approvedIdea: prev.approvedIdea, sessionId: prev.sessionId, brandContext: incoming.brandContext || '' } }];"
+      },
+      "id": "node-09",
+      "name": "Preparar Geracao",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2112,
+        -208
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": ""
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ model: \"google/gemini-3.1-flash-image-preview\", messages: [{ role: \"user\", content: $json.imagePrompt }] }) }}",
+        "options": {}
+      },
+      "id": "node-10",
+      "name": "Gerar Imagem",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2400,
+        -208
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": ""
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ model: 'google/gemini-3-flash-preview', messages: [{ role: 'user', content: 'Crie uma legenda e hashtags para post no Instagram sobre: ' + $('Preparar Geracao').first().json.approvedIdea + '. Responda APENAS com JSON valido (sem markdown, sem explicacoes): {\"caption\": \"legenda aqui (max 150 palavras, engajante, pode usar emojis)\", \"hashtags\": [\"#tag1\", \"#tag2\", \"#tag3\", \"#tag4\", \"#tag5\"]}' }] }) }}",
+        "options": {}
+      },
+      "id": "node-11",
+      "name": "Gerar Legenda",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2704,
+        -208
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "var imageResp = $('Gerar Imagem').first().json;\nvar images = imageResp.choices && imageResp.choices[0] && imageResp.choices[0].message && imageResp.choices[0].message.images;\nvar imageUrl = (images && images[0] && images[0].image_url) ? images[0].image_url.url : '';\n\nvar captionResp = $input.first().json;\nvar rawText = (captionResp.choices && captionResp.choices[0] && captionResp.choices[0].message) ? captionResp.choices[0].message.content : '{}';\nvar caption = ''; var hashtags = [];\ntry {\n  var start = rawText.indexOf('{');\n  var end = rawText.lastIndexOf('}');\n  var clean = (start !== -1 && end !== -1) ? rawText.slice(start, end + 1) : rawText;\n  var p = JSON.parse(clean);\n  caption = p.caption || '';\n  hashtags = p.hashtags || [];\n} catch(e) {\n  caption = rawText;\n  hashtags = [];\n}\nvar prev = $('Preparar Geracao').first().json;\nreturn [{ json: { imageUrl: imageUrl, caption: caption, hashtags: hashtags, approvedIdea: prev.approvedIdea, sessionId: prev.sessionId } }];"
+      },
+      "id": "node-12",
+      "name": "Montar Resultado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3008,
+        -208
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": ""
+            },
+            {
+              "name": "Authorization",
+              "value": ""
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ session_id: $json.sessionId, idea_text: $json.approvedIdea, image_url: $json.imageUrl, caption: $json.caption, hashtags: $json.hashtags }) }}",
+        "options": {}
+      },
+      "id": "node-13",
+      "name": "Salvar Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3312,
+        -208
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ JSON.stringify({ type: 'result', imageUrl: $('Montar Resultado').first().json.imageUrl, caption: $('Montar Resultado').first().json.caption, hashtags: $('Montar Resultado').first().json.hashtags, idea: $('Montar Resultado').first().json.approvedIdea }) }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "node-14",
+      "name": "Responder Resultado",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        3600,
+        -208
+      ]
+    },
+    {
+      "parameters": {
+        "fields": {
+          "values": [
+            {
+              "name": "chatModel"
+            },
+            {
+              "name": "imageModel"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-config",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [
+        -304,
+        0
+      ],
+      "notes": "Atualize chatModel e imageModel aqui para trocar os modelos em todo o workflow de uma vez."
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Receber Mensagem": {
+      "main": [
+        [
+          {
+            "node": "Preparar Chat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Chat": {
+      "main": [
+        [
+          {
+            "node": "Chamar Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chamar Gemini": {
+      "main": [
+        [
+          {
+            "node": "Extrair Resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair Resposta": {
+      "main": [
+        [
+          {
+            "node": "Ideia Aprovada?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ideia Aprovada?": {
+      "main": [
+        [
+          {
+            "node": "Extrair Ideia",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder Conversa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair Ideia": {
+      "main": [
+        [
+          {
+            "node": "Gerar Prompt de Imagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gerar Prompt de Imagem": {
+      "main": [
+        [
+          {
+            "node": "Preparar Geracao",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Geracao": {
+      "main": [
+        [
+          {
+            "node": "Gerar Imagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gerar Imagem": {
+      "main": [
+        [
+          {
+            "node": "Gerar Legenda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gerar Legenda": {
+      "main": [
+        [
+          {
+            "node": "Montar Resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar Resultado": {
+      "main": [
+        [
+          {
+            "node": "Salvar Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar Supabase": {
+      "main": [
+        [
+          {
+            "node": "Responder Resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false,
+    "saveManualExecutions": true,
+    "saveExecutionProgress": true
+  },
+  "versionId": "",
+  "meta": {
+    "instanceId": ""
+  },
+  "id": "",
+  "tags": []
+}

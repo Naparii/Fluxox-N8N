@@ -1,0 +1,1327 @@
+{
+  "name": "SDR OUTBOUND",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-inbound",
+      "name": "WhatsApp Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        304
+      ],
+      "webhookId": ""
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      },
+      "id": "cron-outbound",
+      "name": "ProspecÃ§Ã£o Ativa (Cron)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.item.json.body || $input.item.json;\nconst phone = (body.data?.key?.remoteJid?.replace('@s.whatsapp.net','') || body.phone || body.from || '').replace(/\\D/g,'');\nconst message = body.data?.message?.conversation || body.data?.message?.extendedTextMessage?.text || body.message || body.text || '';\nconst name = body.data?.pushName || body.name || 'Contato';\nif (!phone || !message) throw new Error('phone ou message ausente');\nreturn { phone, name, message, timestamp: new Date().toISOString() };"
+      },
+      "id": "extract-message",
+      "name": "Extrai Dados da Mensagem",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": ""
+            },
+            {
+              "name": "Authorization",
+              "value": ""
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_phone: $('Extrai Dados da Mensagem').item.json.phone }) }}",
+        "options": {}
+      },
+      "id": "get-context",
+      "name": "Busca Contexto â€” Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $input.item.json;\nconst incoming = $('Extrai Dados da Mensagem').item.json;\nconst optOutWords = ['pare','parar','stop','cancelar','remover','sair','nÃ£o quero','nao quero'];\nconst isOptOut = optOutWords.some(w => incoming.message.toLowerCase().includes(w));\nif (!ctx.found) {\n  return { lead_id: null, is_new_lead: true, is_opt_out: false, is_returning_client: false, stage: 'abertura', messages: [], collected_data: {}, client_summary: null, phone: incoming.phone, name: incoming.name, message: incoming.message };\n}\nreturn {\n  lead_id: ctx.lead_id, is_new_lead: false, is_opt_out: isOptOut,\n  is_returning_client: ctx.is_returning_client || false,\n  stage: ctx.stage || 'abertura',\n  messages: ctx.messages || [],\n  collected_data: ctx.collected_data || {},\n  client_summary: ctx.client_summary || null,\n  summary_key_facts: ctx.summary_key_facts || null,\n  phone: ctx.phone, name: ctx.name || incoming.name,\n  company: ctx.company || '', segment: ctx.segment || '',\n  message: incoming.message\n};"
+      },
+      "id": "prepare-context",
+      "name": "Prepara Contexto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "opt-out-check",
+              "leftValue": "={{ $json.is_opt_out }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "check-optout",
+      "name": "Ã‰ Opt-Out?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1200,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": ""
+            },
+            {
+              "name": "Authorization",
+              "value": ""
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_phone: $('Prepara Contexto').item.json.phone }) }}",
+        "options": {}
+      },
+      "id": "handle-optout",
+      "name": "Registra Opt-Out â€” Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.stage }}",
+                    "rightValue": "abertura",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "abertura"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.stage }}",
+                    "rightValue": "qualificacao",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "qualificacao"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.stage }}",
+                    "rightValue": "mapeamento_de_dor",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "mapeamento"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.stage }}",
+                    "rightValue": "solucao",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "solucao"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.stage }}",
+                    "rightValue": "handoff",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "handoff"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "stage-router",
+      "name": "Roteador de EstÃ¡gios",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1440,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": ""
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": ""
+            },
+            {
+              "name": "X-Title",
+              "value": "My AI SDR Agent"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"anthropic/claude-sonnet-4-5\",\n  \"max_tokens\": 500,\n  \"temperature\": 0.7,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": [\n        {\n          \"type\": \"text\",\n          \"text\": \"VocÃª Ã© um SDR consultivo. Fase: ABERTURA.\\n\\nObjetivo: quebrar o gelo, despertar curiosidade. NÃƒO mencione produtos.\\n\\nRegras:\\n- MÃ¡ximo 3 linhas\\n- Tom humano, nÃ£o corporativo\\n- Termine com uma pergunta aberta\\n- Nunca use 'tudo bem?' como abertura\\n\\nResponda APENAS em JSON vÃ¡lido:\\n{\\\"resposta\\\": \\\"...\\\", \\\"proximo_stage\\\": \\\"qualificacao\\\"}\",\n          \"cache_control\": { \"type\": \"ephemeral\" }\n        },\n        {\n          \"type\": \"text\",\n          \"text\": \"{{ $json.client_summary ? 'CLIENTE RECORRENTE â€” contexto anterior:\\\\n' + $json.client_summary : 'Lead novo.' }}\\n\\nNome: {{ $json.name }}\\nEmpresa: {{ $json.company }}\\nSegmento: {{ $json.segment }}\"\n        }\n      ]\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Mensagem: {{ $json.message }}\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "ai-abertura",
+      "name": "AI â€” Abertura",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": ""
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": ""
+            },
+            {
+              "name": "X-Title",
+              "value": "My AI SDR Agent"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"anthropic/claude-sonnet-4-5\",\n  \"max_tokens\": 600,\n  \"temperature\": 0.5,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": [\n        {\n          \"type\": \"text\",\n          \"text\": \"VocÃª Ã© um SDR qualificador. Fase: QUALIFICAÃ‡ÃƒO.\\n\\nPrecisa descobrir (sem interrogatÃ³rio):\\n1. Cargo/funÃ§Ã£o do contato\\n2. Se a empresa tem o problema que resolvemos\\n3. Se tem autoridade/orÃ§amento para decidir\\n\\nFaÃ§a UMA pergunta por vez.\\nSe jÃ¡ tiver as 3 informaÃ§Ãµes â†’ proximo_stage: 'mapeamento_de_dor'\\n\\nResponda APENAS em JSON vÃ¡lido:\\n{\\\"resposta\\\": \\\"...\\\", \\\"proximo_stage\\\": \\\"qualificacao|mapeamento_de_dor\\\", \\\"dados_coletados\\\": {\\\"cargo\\\": null, \\\"tem_problema\\\": null, \\\"tem_autoridade\\\": null}}\",\n          \"cache_control\": { \"type\": \"ephemeral\" }\n        },\n        {\n          \"type\": \"text\",\n          \"text\": \"{{ $json.client_summary ? 'CLIENTE RECORRENTE:\\\\n' + $json.client_summary + '\\\\nNÃ£o pergunte o que jÃ¡ sabe.' : '' }}\\n\\nDados coletados: {{ JSON.stringify($json.collected_data) }}\\nHistÃ³rico: {{ JSON.stringify($json.messages) }}\"\n        }\n      ]\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Mensagem: {{ $json.message }}\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "ai-qualificacao",
+      "name": "AI â€” QualificaÃ§Ã£o",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": ""
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": ""
+            },
+            {
+              "name": "X-Title",
+              "value": "My AI SDR Agent"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"anthropic/claude-sonnet-4-5\",\n  \"max_tokens\": 700,\n  \"temperature\": 0.5,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": [\n        {\n          \"type\": \"text\",\n          \"text\": \"VocÃª Ã© um especialista em descoberta de problemas. Fase: MAPEAMENTO DE DOR.\\n\\nDescubra:\\n- Qual processo estÃ¡ travando o cliente?\\n- Qual o impacto (financeiro, tempo, operacional)?\\n- O que jÃ¡ foi tentado? Por que nÃ£o funcionou?\\n\\nFaÃ§a UMA pergunta por vez. SÃ³ avance quando a dor principal estiver clara.\\n\\nResponda APENAS em JSON vÃ¡lido:\\n{\\\"resposta\\\": \\\"...\\\", \\\"proximo_stage\\\": \\\"mapeamento_de_dor|solucao\\\", \\\"dados_coletados\\\": {\\\"dor_principal\\\": null, \\\"impacto\\\": null, \\\"tentativas_anteriores\\\": null}}\",\n          \"cache_control\": { \"type\": \"ephemeral\" }\n        },\n        {\n          \"type\": \"text\",\n          \"text\": \"{{ $json.client_summary ? 'CLIENTE RECORRENTE:\\\\n' + $json.client_summary + '\\\\nExplore se o problema persiste ou mudou.' : '' }}\\n\\nDados coletados: {{ JSON.stringify($json.collected_data) }}\\nHistÃ³rico: {{ JSON.stringify($json.messages) }}\"\n        }\n      ]\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Mensagem: {{ $json.message }}\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "ai-mapeamento",
+      "name": "AI â€” Mapeamento de Dor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "url": "",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": ""
+            },
+            {
+              "name": "Authorization",
+              "value": ""
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-products",
+      "name": "Busca Produtos â€” Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": ""
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": ""
+            },
+            {
+              "name": "X-Title",
+              "value": "My AI SDR Agent"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"anthropic/claude-sonnet-4-5\",\n  \"max_tokens\": 800,\n  \"temperature\": 0.6,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": [\n        {\n          \"type\": \"text\",\n          \"text\": \"VocÃª Ã© um SDR apresentando uma soluÃ§Ã£o. Fase: APRESENTAÃ‡ÃƒO.\\n\\nEstrutura obrigatÃ³ria:\\n1. 'VocÃª mencionou que [dor]...'\\n2. 'Nossos clientes com o mesmo desafio resolveram com [produto]...'\\n3. '[Resultado concreto]'\\n4. 'Faz sentido eu te mostrar como funcionaria pra vocÃªs?'\\n\\nApresente APENAS 1 produto â€” o mais relevante para a dor.\\nNunca use linguagem de vendas agressiva.\\n\\nResponda APENAS em JSON vÃ¡lido:\\n{\\\"resposta\\\": \\\"...\\\", \\\"proximo_stage\\\": \\\"handoff|solucao\\\", \\\"produto_apresentado\\\": \\\"...\\\", \\\"nivel_interesse\\\": \\\"alto|medio|baixo|indefinido\\\"}\",\n          \"cache_control\": { \"type\": \"ephemeral\" }\n        },\n        {\n          \"type\": \"text\",\n          \"text\": \"CatÃ¡logo de produtos:\\n{{ JSON.stringify($('Busca Produtos â€” Supabase').all().map(i => i.json)) }}\",\n          \"cache_control\": { \"type\": \"ephemeral\" }\n        },\n        {\n          \"type\": \"text\",\n          \"text\": \"{{ $('Prepara Contexto').item.json.client_summary ? 'CLIENTE RECORRENTE:\\\\n' + $('Prepara Contexto').item.json.client_summary + '\\\\nEvite apresentar algo que o cliente jÃ¡ conhece.' : '' }}\\n\\nDor: {{ $('Prepara Contexto').item.json.collected_data.dor_principal }}\\nImpacto: {{ $('Prepara Contexto').item.json.collected_data.impacto }}\"\n        }\n      ]\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Mensagem: {{ $('Prepara Contexto').item.json.message }}\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "ai-solucao",
+      "name": "AI â€” SoluÃ§Ã£o",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1920,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Prepara Contexto').item.json;\nconst raw = $input.item.json.choices?.[0]?.message?.content || '';\n\nlet ai;\ntry {\n  const match = raw.match(/\\{[\\s\\S]*\\}/);\n  ai = match ? JSON.parse(match[0]) : { resposta: raw, proximo_stage: ctx.stage };\n} catch(e) {\n  ai = { resposta: 'Desculpe, pode repetir?', proximo_stage: ctx.stage };\n}\n\nconst updatedData = { ...(ctx.collected_data || {}), ...(ai.dados_coletados || {}) };\nif (ai.produto_apresentado) updatedData.produto_apresentado = ai.produto_apresentado;\nif (ai.nivel_interesse)     updatedData.nivel_interesse     = ai.nivel_interesse;\n\nreturn {\n  lead_id: ctx.lead_id, phone: ctx.phone, name: ctx.name,\n  company: ctx.company, segment: ctx.segment,\n  resposta: ai.resposta, stage_atual: ctx.stage,\n  proximo_stage: ai.proximo_stage || ctx.stage,\n  collected_data: updatedData,\n  is_new_lead: ctx.is_new_lead,\n  is_returning_client: ctx.is_returning_client,\n  lead_message: ctx.message, agent_message: ai.resposta\n};"
+      },
+      "id": "process-ai-response",
+      "name": "Processa Resposta da AI",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2160,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.item.json;\nreturn [{ lead_id: d.lead_id, phone: d.phone, role: 'lead', content: d.lead_message, stage: d.proximo_stage, collected_data: d.collected_data, ...d }];"
+      },
+      "id": "prep-save",
+      "name": "Prepara Salvamento",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": ""
+            },
+            {
+              "name": "Authorization",
+              "value": ""
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_lead_id: $json.lead_id, p_role: 'lead', p_content: $json.lead_message }) }}",
+        "options": {}
+      },
+      "id": "save-lead-msg",
+      "name": "Salva Msg Lead â€” Sliding Window",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": ""
+            },
+            {
+              "name": "Authorization",
+              "value": ""
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_lead_id: $('Prepara Salvamento').item.json.lead_id, p_role: 'agent', p_content: $('Prepara Salvamento').item.json.agent_message }) }}",
+        "options": {}
+      },
+      "id": "save-agent-msg",
+      "name": "Salva Msg Agente â€” Sliding Window",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": ""
+            },
+            {
+              "name": "Authorization",
+              "value": ""
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ stage: $('Prepara Salvamento').item.json.proximo_stage, collected_data: $('Prepara Salvamento').item.json.collected_data, updated_at: new Date().toISOString() }) }}",
+        "options": {}
+      },
+      "id": "update-stage",
+      "name": "Atualiza Stage â€” Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2880,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": ""
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{ $('Prepara Salvamento').item.json.phone }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $('Prepara Salvamento').item.json.resposta }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-whatsapp",
+      "name": "Envia Mensagem WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3120,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $('Prepara Salvamento').item.json.proximo_stage }}",
+              "rightValue": "handoff",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "check-handoff",
+      "name": "Ã‰ Handoff?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3360,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": ""
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": ""
+            },
+            {
+              "name": "X-Title",
+              "value": "My AI SDR Agent"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"anthropic/claude-sonnet-4-5\",\n  \"max_tokens\": 500,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": [\n        {\n          \"type\": \"text\",\n          \"text\": \"Gere duas saÃ­das em JSON com as chaves 'briefing' e 'summary'.\\n\\n'briefing': resumo de 6 itens para o vendedor humano:\\n1. Lead (nome, cargo, empresa)\\n2. Dor principal\\n3. Impacto estimado\\n4. SoluÃ§Ã£o apresentada\\n5. NÃ­vel de interesse\\n6. PrÃ³ximo passo sugerido\\n\\n'summary': texto de 3-4 linhas para a IA usar em conversas futuras. Inclua: o que o cliente faz, qual problema tem, o que foi apresentado, nÃ­vel de interesse.\\n\\nResponda APENAS em JSON vÃ¡lido:\\n{\\\"briefing\\\": \\\"...\\\", \\\"summary\\\": \\\"...\\\", \\\"key_facts\\\": {\\\"produtos_apresentados\\\": [], \\\"dores_conhecidas\\\": [], \\\"nivel_interesse\\\": \\\"\\\"}}\",\n          \"cache_control\": { \"type\": \"ephemeral\" }\n        }\n      ]\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Lead: {{ $('Prepara Salvamento').item.json.name }}\\nTelefone: {{ $('Prepara Salvamento').item.json.phone }}\\nDados: {{ JSON.stringify($('Prepara Salvamento').item.json.collected_data) }}\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "ai-briefing-summary",
+      "name": "AI â€” Briefing + Resumo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3600,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.item.json.choices?.[0]?.message?.content || '{}';\nlet parsed;\ntry {\n  const match = raw.match(/\\{[\\s\\S]*\\}/);\n  parsed = match ? JSON.parse(match[0]) : {};\n} catch(e) { parsed = {}; }\nreturn {\n  briefing:  parsed.briefing  || raw,\n  summary:   parsed.summary   || '',\n  key_facts: parsed.key_facts || {},\n  lead_id:   $('Prepara Salvamento').item.json.lead_id,\n  phone:     $('Prepara Salvamento').item.json.phone,\n  name:      $('Prepara Salvamento').item.json.name\n};"
+      },
+      "id": "parse-briefing",
+      "name": "Parse Briefing",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3840,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": ""
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": ""
+            },
+            {
+              "name": "text",
+              "value": "=ðŸ”¥ *Lead Quente!*\n\n{{ $json.briefing }}\n\nðŸ“± Contato: {{ $json.phone }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "notify-seller",
+      "name": "Notifica Vendedor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4080,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": ""
+            },
+            {
+              "name": "Authorization",
+              "value": ""
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_lead_id: $json.lead_id, p_summary: $json.summary, p_key_facts: $json.key_facts }) }}",
+        "options": {}
+      },
+      "id": "save-summary",
+      "name": "Salva Resumo â€” Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4080,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": ""
+            },
+            {
+              "name": "Authorization",
+              "value": ""
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"status\": \"MQL_pronto_para_vendas\", \"last_contact\": \"{{ new Date().toISOString() }}\"}",
+        "options": {}
+      },
+      "id": "update-crm-handoff",
+      "name": "Atualiza CRM â€” Lead Quente",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4080,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"ok\" }",
+        "options": {}
+      },
+      "id": "webhook-response",
+      "name": "Resposta Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        3360,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "url": "",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": ""
+            },
+            {
+              "name": "Authorization",
+              "value": ""
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-leads-outbound",
+      "name": "Busca Leads para Prospectar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": ""
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": ""
+            },
+            {
+              "name": "X-Title",
+              "value": "My AI SDR Agent"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"anthropic/claude-sonnet-4-5\",\n  \"max_tokens\": 300,\n  \"temperature\": 0.8,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": [\n        {\n          \"type\": \"text\",\n          \"text\": \"VocÃª Ã© um SDR criativo. Crie uma mensagem de primeiro contato personalizada.\\n\\nRegras:\\n- MÃ¡ximo 3 linhas\\n- Mostre que conhece o setor do lead\\n- NÃƒO mencione produtos\\n- Termine com pergunta aberta e leve\\n- Tom: humano, nÃ£o corporativo\\n- NUNCA use 'tudo bem?' como abertura\\n\\nResponda APENAS com a mensagem, sem aspas ou JSON.\",\n          \"cache_control\": { \"type\": \"ephemeral\" }\n        }\n      ]\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Nome: {{ $json.name }}\\nEmpresa: {{ $json.company }}\\nSegmento: {{ $json.segment }}\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "ai-first-contact",
+      "name": "AI â€” Mensagem Inicial",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const content = $input.item.json.choices?.[0]?.message?.content || '';\nreturn { message_text: content.trim() };"
+      },
+      "id": "parse-first-contact",
+      "name": "Parse Mensagem Inicial",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": ""
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{ $('Busca Leads para Prospectar').item.json.phone }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.message_text }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-first-contact",
+      "name": "Envia Primeiro Contato",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": ""
+            },
+            {
+              "name": "Authorization",
+              "value": ""
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"status\": \"contatado\", \"last_contact\": \"{{ new Date().toISOString() }}\"}",
+        "options": {}
+      },
+      "id": "mark-contacted",
+      "name": "Marca como Contatado â€” Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        704
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "WhatsApp Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extrai Dados da Mensagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrai Dados da Mensagem": {
+      "main": [
+        [
+          {
+            "node": "Busca Contexto â€” Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Busca Contexto â€” Supabase": {
+      "main": [
+        [
+          {
+            "node": "Prepara Contexto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepara Contexto": {
+      "main": [
+        [
+          {
+            "node": "Ã‰ Opt-Out?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ã‰ Opt-Out?": {
+      "main": [
+        [
+          {
+            "node": "Roteador de EstÃ¡gios",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registra Opt-Out â€” Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Roteador de EstÃ¡gios": {
+      "main": [
+        [
+          {
+            "node": "AI â€” Abertura",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI â€” QualificaÃ§Ã£o",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI â€” Mapeamento de Dor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Busca Produtos â€” Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI â€” Briefing + Resumo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI â€” Abertura": {
+      "main": [
+        [
+          {
+            "node": "Processa Resposta da AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI â€” QualificaÃ§Ã£o": {
+      "main": [
+        [
+          {
+            "node": "Processa Resposta da AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI â€” Mapeamento de Dor": {
+      "main": [
+        [
+          {
+            "node": "Processa Resposta da AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Busca Produtos â€” Supabase": {
+      "main": [
+        [
+          {
+            "node": "AI â€” SoluÃ§Ã£o",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI â€” SoluÃ§Ã£o": {
+      "main": [
+        [
+          {
+            "node": "Processa Resposta da AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processa Resposta da AI": {
+      "main": [
+        [
+          {
+            "node": "Prepara Salvamento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepara Salvamento": {
+      "main": [
+        [
+          {
+            "node": "Salva Msg Lead â€” Sliding Window",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salva Msg Lead â€” Sliding Window": {
+      "main": [
+        [
+          {
+            "node": "Salva Msg Agente â€” Sliding Window",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salva Msg Agente â€” Sliding Window": {
+      "main": [
+        [
+          {
+            "node": "Atualiza Stage â€” Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Atualiza Stage â€” Supabase": {
+      "main": [
+        [
+          {
+            "node": "Envia Mensagem WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Envia Mensagem WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Ã‰ Handoff?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ã‰ Handoff?": {
+      "main": [
+        [
+          {
+            "node": "AI â€” Briefing + Resumo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resposta Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI â€” Briefing + Resumo": {
+      "main": [
+        [
+          {
+            "node": "Parse Briefing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Briefing": {
+      "main": [
+        [
+          {
+            "node": "Notifica Vendedor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Salva Resumo â€” Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Atualiza CRM â€” Lead Quente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ProspecÃ§Ã£o Ativa (Cron)": {
+      "main": [
+        [
+          {
+            "node": "Busca Leads para Prospectar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Busca Leads para Prospectar": {
+      "main": [
+        [
+          {
+            "node": "AI â€” Mensagem Inicial",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI â€” Mensagem Inicial": {
+      "main": [
+        [
+          {
+            "node": "Parse Mensagem Inicial",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Mensagem Inicial": {
+      "main": [
+        [
+          {
+            "node": "Envia Primeiro Contato",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Envia Primeiro Contato": {
+      "main": [
+        [
+          {
+            "node": "Marca como Contatado â€” Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "",
+  "meta": {
+    "instanceId": ""
+  },
+  "id": "",
+  "tags": []
+}

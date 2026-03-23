@@ -1,0 +1,1122 @@
+{
+  "name": "Fluxo Completo — Ideias + Posts + Imagens",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        224,
+        304
+      ],
+      "webhookId": ""
+    },
+    {
+      "parameters": {
+        "jsCode": "const tema = $input.first().json.body.tema;\nif (!tema) throw new Error('Campo \"tema\" obrigatório no body');\n\nconst systemPrompt = `Você é um especialista em busca de vídeos do YouTube.\nDado um tema, retorne os 2 vídeos mais relevantes:\n- Duração MÁXIMA: 10 minutos\n- Preferencialmente em português\n\nRetorne APENAS JSON válido:\n{\"videos\": [{\"videoId\": \"ID\", \"title\": \"Título\", \"url\": \"https://youtube.com/watch?v=ID\", \"channel\": \"Canal\"}]}`;\n\nconst payload = JSON.stringify({\n  model: 'google/gemini-2.0-flash-001',\n  messages: [\n    { role: 'system', content: systemPrompt },\n    { role: 'user', content: 'Busque 2 vídeos relevantes do YouTube (máx 10 min) sobre: ' + tema }\n  ],\n  response_format: { type: 'json_object' }\n});\n\nreturn [{ json: { tema, payload } }];"
+      },
+      "id": "prep-buscar-videos",
+      "name": "Preparar: Buscar Vídeos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": ""
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": ""
+            },
+            {
+              "name": "X-Title",
+              "value": "My Post Generator"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.payload }}",
+        "options": {}
+      },
+      "id": "http-buscar-videos",
+      "name": "HTTP: Buscar Vídeos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        672,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const content = $input.first().json.choices[0].message.content;\nconst tema = $('Preparar: Buscar Vídeos').first().json.tema;\n\nlet videos;\ntry { videos = JSON.parse(content).videos || []; }\ncatch(e) { throw new Error('Falha vídeos: ' + content); }\n\nif (!videos.length) throw new Error('Nenhum vídeo: ' + tema);\n\nreturn videos.slice(0, 2).map(v => ({ json: { tema, videoId: v.videoId || '', title: v.title || '', url: v.url || '', channel: v.channel || '' } }));"
+      },
+      "id": "parse-videos",
+      "name": "Parsear Vídeos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Roda 1x por vídeo — $json = vídeo atual\nconst v = $json;\nconst systemPrompt = `Você é um especialista em análise de conteúdo de vídeos do YouTube.\nGere um RESUMO LIMPO do vídeo. EXCLUA: CTAs, apresentação, patrocínios.\nO resumo deve ter 600-1000 palavras, em português objetivo.\nRetorne APENAS JSON válido:\n{\"resumo\": \"texto aqui\", \"topicos_principais\": [\"tópico 1\", \"tópico 2\", \"tópico 3\"]}`;\n\nconst payload = JSON.stringify({\n  model: 'google/gemini-2.0-flash-001',\n  messages: [\n    { role: 'system', content: systemPrompt },\n    { role: 'user', content: 'Gere um resumo limpo do vídeo \"' + v.title + '\" do canal \"' + v.channel + '\" (' + v.url + ') sobre: ' + v.tema }\n  ],\n  response_format: { type: 'json_object' }\n});\n\nreturn { json: { ...v, payload } };"
+      },
+      "id": "prep-resumir",
+      "name": "Preparar: Resumir Vídeos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1104,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": ""
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": ""
+            },
+            {
+              "name": "X-Title",
+              "value": "My Post Generator"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.payload }}",
+        "options": {}
+      },
+      "id": "http-resumir",
+      "name": "HTTP: Resumir Vídeos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1328,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "function cleanParse(str) {\n  try { return JSON.parse(str); } catch(e) {\n    var BS = String.fromCharCode(92);\n    var NL = String.fromCharCode(10);\n    var CR = String.fromCharCode(13);\n    var fixed = \"\", inStr = false, esc = false;\n    for (var i = 0; i < str.length; i++) {\n      var c = str[i];\n      if (esc) { fixed += c; esc = false; continue; }\n      if (c === BS && inStr) { esc = true; fixed += c; continue; }\n      if (c === '\"') { inStr = !inStr; fixed += c; continue; }\n      if (inStr && c === NL) { fixed += BS + \"n\"; continue; }\n      if (inStr && c === CR) { fixed += BS + \"r\"; continue; }\n      fixed += c;\n    }\n    return JSON.parse(fixed);\n  }\n}\n\n// Roda 1x por resposta HTTP — $json = resposta atual\nconst content = $json.choices[0].message.content;\nconst videoData = $('Preparar: Resumir Vídeos').item.json; // item pareado\n\nlet resumoData;\ntry { resumoData = cleanParse(content); }\ncatch(e) { resumoData = { resumo: content, topicos_principais: [] }; }\n\nreturn { json: {\n  tema: videoData.tema,\n  title: videoData.title,\n  url: videoData.url,\n  channel: videoData.channel,\n  resumo: resumoData.resumo || '',\n  topicos_principais: resumoData.topicos_principais || []\n}};"
+      },
+      "id": "parse-resumo",
+      "name": "Parsear Resumos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1552,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "id": "aggregate-resumos",
+      "name": "Aggregate Resumos",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        1760,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const aggregated = $input.first().json;\nconst videos = aggregated.data || [];\nconst tema = videos[0]?.tema || '';\n\nif (!videos.length) throw new Error('Nenhum resumo recebido');\n\nconst systemPrompt = `Você é um estrategista de conteúdo especializado em redes sociais.\n\nReceberá resumos de vídeos sobre um tema. Gere exatamente 3 temas de conteúdo sobre o tema recebido.\n\nPara cada tema, retorne:\n- titulo: título direto e atrativo (máx 60 caracteres)\n- rascunho: 2-3 frases resumindo o ângulo e mensagem principal\n- pontos_chave: array com 3-4 pontos do conteúdo a destacar\n- angulo: educativo | provocador | inspiracional | prático\n- video_idx: índice do vídeo de origem (0 ou 1)\n\nA mesma imagem em infográfico será usada para LinkedIn e Instagram.\nOs posts serão gerados por agentes especializados em cada plataforma.\n\nRetorne APENAS JSON válido:\n{\n  \"topics\": [{\"titulo\": \"...\", \"rascunho\": \"...\", \"pontos_chave\": [\"...\"], \"angulo\": \"...\", \"video_idx\": 0}], \"angulo\": \"...\", \"video_idx\": 0},\n    {\"titulo\": \"...\", \"rascunho\": \"...\", \"pontos_chave\": [...], \"angulo\": \"...\", \"video_idx\": 1},\n    {\"titulo\": \"...\", \"rascunho\": \"...\", \"pontos_chave\": [...], \"angulo\": \"...\", \"video_idx\": 0}\n  ],\n  \"instagram\": [\n    {\"titulo\": \"...\", \"rascunho\": \"...\", \"pontos_chave\": [...], \"angulo\": \"...\", \"video_idx\": 1},\n    {\"titulo\": \"...\", \"rascunho\": \"...\", \"pontos_chave\": [...], \"angulo\": \"...\", \"video_idx\": 0},\n    {\"titulo\": \"...\", \"rascunho\": \"...\", \"pontos_chave\": [...], \"angulo\": \"...\", \"video_idx\": 1}\n  ]\n}`;\n\nconst payload = JSON.stringify({\n  model: 'google/gemini-2.0-flash-001',\n  messages: [\n    { role: 'system', content: systemPrompt },\n    { role: 'user', content: JSON.stringify({ tema, videos: videos.map((v, idx) => ({ idx, title: v.title, url: v.url, resumo: v.resumo, topicos_principais: v.topicos_principais })) }) }\n  ],\n  response_format: { type: 'json_object' }\n});\n\nreturn [{ json: { tema, videos, payload } }];"
+      },
+      "id": "prep-ideias",
+      "name": "Preparar: Gerar Ideias",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1984,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": ""
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": ""
+            },
+            {
+              "name": "X-Title",
+              "value": "My Post Generator"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.payload }}",
+        "options": {}
+      },
+      "id": "http-ideias",
+      "name": "HTTP: Gerar Ideias",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2208,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "function cleanParse(str) {\n  var raw = str.trim();\n  if (raw.indexOf('```') === 0) raw = raw.replace(/^`{3}[\\w]*\\n?/, '').replace(/\\n?`{3}$/, '').trim();\n  try { return JSON.parse(raw); } catch(e) {\n    var BS = String.fromCharCode(92), NL = String.fromCharCode(10), CR = String.fromCharCode(13);\n    var fixed = '', inStr = false, esc = false;\n    for (var i = 0; i < raw.length; i++) {\n      var c = raw[i];\n      if (esc) { fixed += c; esc = false; continue; }\n      if (c === BS && inStr) { esc = true; fixed += c; continue; }\n      if (c === '\"') { inStr = !inStr; fixed += c; continue; }\n      if (inStr && c === NL) { fixed += BS + 'n'; continue; }\n      if (inStr && c === CR) { fixed += BS + 'r'; continue; }\n      fixed += c;\n    }\n    return JSON.parse(fixed);\n  }\n}\n\nconst payload = $('Preparar: Gerar Ideias').first().json;\nconst content = $input.first().json.choices[0].message.content;\n\nlet ideas;\ntry { ideas = cleanParse(content); }\ncatch(e) { throw new Error('Falha ao parsear ideias: ' + content.substring(0, 200)); }\n\nconst videos = payload.videos || [];\nconst tema = payload.tema;\nconst topics = ideas.topics || ideas.linkedin || [];\nconst items = [];\n\ntopics.slice(0, 3).forEach(idea => {\n  const video = videos[idea.video_idx] || videos[0] || {};\n  items.push({\n    json: {\n      doc_name: idea.titulo,\n      rascunho: idea.rascunho || '',\n      pontos_chave: idea.pontos_chave || [],\n      angulo: idea.angulo || '',\n      source_url: video.url || '',\n      video_titulo: video.title || '',\n      tema\n    }\n  });\n});\n\nif (!items.length) throw new Error('Nenhuma ideia gerada.');\nreturn items;"
+      },
+      "id": "parse-ideias",
+      "name": "Parsear Ideias",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2432,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// 1 imagem por tema — compartilhada entre LinkedIn e Instagram\nconst idea = $json;\nconst titulo = idea.doc_name;\n\nconst systemPrompt = `You are an expert infographic designer and image prompt engineer for social media.\nGenerate ONE optimized infographic image prompt in English for the given topic.\nStyle: clean infographic layout, data visualization, icons and charts, flat design, bold typography areas, professional color palette (blues, teals, whites), modern and clear visual hierarchy.\nThe image MUST look like a social media infographic — with sections, icons, arrows, or data points — NOT a generic photo.\nMain subject: ${titulo}\nDescribe: layout structure, key visual elements, color scheme, icons or charts to include, overall composition.\nLength: 70-100 words. NO text or typography content — describe the visual structure only.\nReturn ONLY valid JSON: {\"image_prompt\": \"...\"}`;\n\nconst payload = JSON.stringify({\n  model: 'anthropic/claude-haiku-4.5',\n  messages: [\n    { role: 'system', content: systemPrompt },\n    { role: 'user', content: 'Topic: ' + titulo + '\\nKey points: ' + (idea.pontos_chave || []).join(', ') }\n  ],\n  response_format: { type: 'json_object' }\n});\n\nreturn { json: { ...idea, platform: 'linkedin', payload } };"
+      },
+      "id": "prep-img-prompt",
+      "name": "Preparar: Image Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": ""
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": ""
+            },
+            {
+              "name": "X-Title",
+              "value": "My Post Generator"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.payload }}",
+        "options": {}
+      },
+      "id": "http-img-prompt",
+      "name": "HTTP: Gerar Image Prompt",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2864,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "function cleanParse(str) {\n  var raw = str.trim();\n  if (raw.indexOf('```') === 0) {\n    raw = raw.replace(/^`{3}[\\w]*\\n?/, '').replace(/\\n?`{3}$/, '').trim();\n  }\n  try { return JSON.parse(raw); } catch(e) {\n    var BS = String.fromCharCode(92), NL = String.fromCharCode(10), CR = String.fromCharCode(13);\n    var fixed = '', inStr = false, esc = false;\n    for (var i = 0; i < raw.length; i++) {\n      var c = raw[i];\n      if (esc) { fixed += c; esc = false; continue; }\n      if (c === BS && inStr) { esc = true; fixed += c; continue; }\n      if (c === '\"') { inStr = !inStr; fixed += c; continue; }\n      if (inStr && c === NL) { fixed += BS + 'n'; continue; }\n      if (inStr && c === CR) { fixed += BS + 'r'; continue; }\n      fixed += c;\n    }\n    return JSON.parse(fixed);\n  }\n}\n\nconst content = $json.choices[0].message.content;\nconst prevData = $('Preparar: Image Prompt').item.json;\n\nlet parsed;\ntry { parsed = cleanParse(content); } catch(e) { parsed = {}; }\n\nconst titulo = prevData.doc_name.replace(/^(LinkedIn|Instagram)\\s*[\\u2014\\-]\\s*/, '').trim();\nconst imagePrompt = parsed.image_prompt || ('Professional ' + prevData.platform + ' social media visual about ' + titulo + ', modern style');\n\n// Build Gemini payload\nconst geminiPayload = JSON.stringify({\n  model: 'google/gemini-3.1-flash-image-preview',\n  messages: [{ role: 'user', content: imagePrompt }]\n});\n\nreturn { json: { ...prevData, image_prompt: imagePrompt, gemini_payload: geminiPayload, payload: undefined } };"
+      },
+      "id": "parse-imagem",
+      "name": "Parsear + Gerar URL Imagem",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3088,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "plat-check",
+              "leftValue": "={{ $json.platform }}",
+              "rightValue": "linkedin",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-platform",
+      "name": "IF: LinkedIn?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        4432,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Agente LinkedIn — roda 1x por item LinkedIn\nconst data = $json;\nconst titulo = data.doc_name.replace(/^LinkedIn\\s*[—\\-]\\s*/, '').trim();\nconst pontos = (data.pontos_chave || []).map((p, i) => (i+1) + '. ' + p).join('\\n');\n\nconst systemPrompt = `Você é um especialista em criação de conteúdo para o LinkedIn com foco em engajamento real.\n\nMISSÃO: Criar um post que gere comentários, saves e compartilhamentos.\n\nESTRUTURA OBRIGATÓRIA:\n1. GANCHO (1-2 linhas): frase impactante que para o scroll — dado surpreendente ou pergunta direta\n2. CORPO (4-6 parágrafos curtos): insights, dados, argumentos. Cada parágrafo: 2-3 linhas. Linha em branco entre todos.\n3. CONCLUSÃO (1-2 linhas): o insight mais forte ou uma provocação\n4. CTA: pergunta aberta que incentiva comentários\n5. HASHTAGS: 4-5 hashtags relevantes na última linha\n\nREGRAS INEGOCIÁVEIS:\n- Tom: profissional mas humano\n- PROIBIDO: \"sinergia\", \"alavancar\", \"disruptivo\", \"ecossistema\"\n- Use números e dados concretos\n- Parágrafos curtos: máx 3 linhas\n- Tamanho: 200-300 palavras\n- SEM bullet points\n- O conteúdo deve ser COERENTE com a imagem gerada\n\nRetorne APENAS JSON válido:\n{\"post\": \"texto completo do post\", \"hashtags\": \"#tag1 #tag2 #tag3 #tag4 #tag5\"}`;\n\nconst payload = JSON.stringify({\n  model: 'google/gemini-2.0-flash-001',\n  messages: [\n    { role: 'system', content: systemPrompt },\n    { role: 'user', content: 'Título: ' + titulo + '\\n\\nIdeia: ' + data.rascunho + '\\n\\nPontos-chave:\\n' + pontos + '\\n\\nÂngulo: ' + data.angulo + '\\n\\nImagem (contexto visual): ' + data.image_url }\n  ],\n  response_format: { type: 'json_object' }\n});\n\nreturn { json: { ...data, payload } };"
+      },
+      "id": "prep-linkedin",
+      "name": "Preparar: Agente LinkedIn",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3520,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": ""
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": ""
+            },
+            {
+              "name": "X-Title",
+              "value": "My Post Generator"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.payload }}",
+        "options": {}
+      },
+      "id": "http-linkedin",
+      "name": "HTTP: Agente LinkedIn",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3744,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "function cleanParse(str) {\n  try { return JSON.parse(str); } catch(e) {\n    var BS = String.fromCharCode(92);\n    var NL = String.fromCharCode(10);\n    var CR = String.fromCharCode(13);\n    var fixed = \"\", inStr = false, esc = false;\n    for (var i = 0; i < str.length; i++) {\n      var c = str[i];\n      if (esc) { fixed += c; esc = false; continue; }\n      if (c === BS && inStr) { esc = true; fixed += c; continue; }\n      if (c === '\"') { inStr = !inStr; fixed += c; continue; }\n      if (inStr && c === NL) { fixed += BS + \"n\"; continue; }\n      if (inStr && c === CR) { fixed += BS + \"r\"; continue; }\n      fixed += c;\n    }\n    return JSON.parse(fixed);\n  }\n}\n\nconst content = $json.choices[0].message.content;\nconst prevData = $('Preparar: Agente LinkedIn').item.json;\n\nlet parsed;\ntry { parsed = cleanParse(content); }\ncatch(e) { throw new Error('Falha LinkedIn: ' + String(content).slice(0, 100)); }\n\nconst post = parsed.post || '';\nconst hashtags = parsed.hashtags || '';\nconst postContent = post + (hashtags ? '\\n\\n' + hashtags : '');\n\nreturn { json: { ...prevData, post_content: postContent, payload: undefined } };"
+      },
+      "id": "parse-linkedin",
+      "name": "Parsear Post LinkedIn",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3968,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Agente Instagram — post único, tom Instagram\nconst data = $json;\nconst titulo = data.doc_name.replace(/^Instagram\\s*[—\\-]\\s*/, '').trim();\nconst pontos = (data.pontos_chave || []).map((p, i) => (i+1) + '. ' + p).join('\\n');\n\nconst systemPrompt = `Você é um especialista em criação de conteúdo para o Instagram com foco em conexão humana e engajamento emocional.\n\nMISSÃO: Criar um post que gere saves, comentários e compartilhamentos nas stories.\n\nESTRUTURA OBRIGATÓRIA:\n1. GANCHO (1-2 linhas): frase que para o scroll — pessoal, curiosa ou impactante. Pode começar com emoji.\n2. CORPO (4-6 parágrafos curtos): história, insight ou reflexão. Tom próximo, como se fosse uma conversa. Linha em branco entre parágrafos.\n3. CONCLUSÃO (1-2 linhas): o ensinamento ou provocação que fica na cabeça\n4. CTA: pergunta leve que convida o seguidor a comentar ou salvar\n5. HASHTAGS: 12-15 hashtags na última linha\n\nDIFERENÇAS DO LINKEDIN:\n- Tom: pessoal, quente, autêntico — fale como uma pessoa, não como uma empresa\n- Use emojis com moderação (2-4 no post inteiro)\n- Histórias curtas e concretas funcionam melhor que dados frios\n- Frases mais curtas, ritmo mais dinâmico\n- Tamanho: 150-250 palavras\n- SEM bullet points\n- PROIBIDO: linguagem corporativa, termos técnicos sem explicação\n\nRetorne APENAS JSON válido:\n{\"post\": \"texto completo do post com emojis e quebras de linha\", \"hashtags\": \"#tag1 #tag2 #tag3 ...\"}\n`;\n\nconst payload = JSON.stringify({\n  model: 'google/gemini-2.0-flash-001',\n  messages: [\n    { role: 'system', content: systemPrompt },\n    { role: 'user', content: 'Título: ' + titulo + '\\n\\nIdeia: ' + data.rascunho + '\\n\\nPontos-chave:\\n' + pontos + '\\n\\nÂngulo: ' + data.angulo + '\\n\\nImagem (contexto visual): ' + data.image_url }\n  ],\n  response_format: { type: 'json_object' }\n});\n\nreturn { json: { ...data, payload } };"
+      },
+      "id": "prep-instagram",
+      "name": "Preparar: Agente Instagram",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3520,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": ""
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": ""
+            },
+            {
+              "name": "X-Title",
+              "value": "My Post Generator"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.payload }}",
+        "options": {}
+      },
+      "id": "http-instagram",
+      "name": "HTTP: Agente Instagram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3744,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "function cleanParse(str) {\n  try { return JSON.parse(str); } catch(e) {\n    var BS = String.fromCharCode(92);\n    var NL = String.fromCharCode(10);\n    var CR = String.fromCharCode(13);\n    var fixed = \"\", inStr = false, esc = false;\n    for (var i = 0; i < str.length; i++) {\n      var c = str[i];\n      if (esc) { fixed += c; esc = false; continue; }\n      if (c === BS && inStr) { esc = true; fixed += c; continue; }\n      if (c === '\"') { inStr = !inStr; fixed += c; continue; }\n      if (inStr && c === NL) { fixed += BS + \"n\"; continue; }\n      if (inStr && c === CR) { fixed += BS + \"r\"; continue; }\n      fixed += c;\n    }\n    return JSON.parse(fixed);\n  }\n}\n\nconst content = $json.choices[0].message.content;\nconst prevData = $('Preparar: Agente Instagram').item.json;\n\nlet parsed;\ntry { parsed = cleanParse(content); }\ncatch(e) { throw new Error('Falha Instagram: ' + String(content).slice(0, 100)); }\n\nconst post = parsed.post || '';\nconst hashtags = parsed.hashtags || '';\nconst postContent = post + (hashtags ? '\\n\\n' + hashtags : '');\n\nreturn { json: { ...prevData, post_content: postContent, hashtags, payload: undefined } };"
+      },
+      "id": "parse-instagram",
+      "name": "Parsear Post Instagram",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3968,
+        448
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "merge-posts",
+      "name": "Merge Posts",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        4192,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "databaseId": {
+          "__rl": true,
+          "value": "",
+          "mode": "id"
+        },
+        "title": "={{ $json.doc_name }}",
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "LinkedIn Caption|rich_text",
+              "textContent": "={{ $json.platform === 'linkedin' ? $json.post_content : '' }}"
+            },
+            {
+              "key": "Instagram Caption|rich_text",
+              "textContent": "={{ $json.platform === 'instagram' ? $json.post_content : '' }}"
+            },
+            {
+              "key": "Image Prompt|rich_text",
+              "textContent": "={{ $json.image_prompt }}"
+            },
+            {
+              "key": "Image URL|url",
+              "urlValue": "={{ $json.image_url || null }}"
+            },
+            {
+              "key": "Source URL|url",
+              "urlValue": "={{ $json.source_url || null }}"
+            },
+            {
+              "key": "Category|multi_select",
+              "multiSelectValue": "Revisão"
+            },
+            {
+              "key": "Status|select",
+              "selectValue": "Draft"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "notion-revisao",
+      "name": "Notion: Criar em Revisão",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        5264,
+        240
+      ],
+      "credentials": {
+        "notionApi": {
+          "id": "notion-api-credential",
+          "name": "Notion API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "id": "aggregate-final",
+      "name": "Aggregate Final",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        5952,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const tema = $('Preparar: Buscar Vídeos').first().json.tema;\nreturn [{ json: { status: 'success', message: '6 posts gerados e salvos no Notion', tema, ideias: 6, posts: 6, nota: 'Notion: Ideias (resumos) e Revisão (posts + imagens)' }}];"
+      },
+      "id": "resumir-resultado",
+      "name": "Resumir Resultado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6160,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        6384,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const pageId = $json.id;\nconst postData = $('Merge Posts').item.json;\n\nconst caption = postData.post_content || '';\nconst hashtags = postData.hashtags || '';\nconst imageUrl = postData.image_url || '';\n\nconst fullCaption = hashtags ? caption + '\\n\\n' + hashtags : caption;\n\nconst blocks = [\n  {\n    object: 'block',\n    type: 'paragraph',\n    paragraph: {\n      rich_text: [{ type: 'text', text: { content: fullCaption.substring(0, 2000) } }]\n    }\n  }\n];\n\nif (imageUrl) {\n  blocks.push({\n    object: 'block',\n    type: 'image',\n    image: { type: 'external', external: { url: imageUrl } }\n  });\n}\n\nreturn {\n  json: {\n    page_id: pageId,\n    payload: JSON.stringify({ children: blocks }),\n    platform: postData.platform,\n    doc_name: postData.doc_name,\n  }\n};"
+      },
+      "id": "prep-conteudo-revisao",
+      "name": "Prep: Conteúdo Revisão",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5040,
+        496
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://api.notion.com/v1/blocks/{{ $json.page_id }}/children",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": ""
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.payload }}",
+        "options": {}
+      },
+      "id": "http-conteudo-revisao",
+      "name": "HTTP: Adicionar Conteúdo Revisão",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5264,
+        496
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": ""
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": ""
+            },
+            {
+              "name": "X-Title",
+              "value": "My Post Generator"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.gemini_payload }}",
+        "options": {}
+      },
+      "id": "http-gerar-imagem",
+      "name": "HTTP: Gerar Imagem",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        3312,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const geminiResp = $json;\nconst prevData = $('Parsear + Gerar URL Imagem').item.json;\n\nconst images = geminiResp.choices &&\n               geminiResp.choices[0] &&\n               geminiResp.choices[0].message &&\n               geminiResp.choices[0].message.images;\n\nif (!images || !images[0] || !images[0].image_url) {\n  throw new Error('Gemini nao retornou imagem: ' + JSON.stringify(geminiResp).substring(0, 200));\n}\n\nconst dataUrl = images[0].image_url.url || '';\nconst base64Data = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;\n\nconst imgurPayload = JSON.stringify({ image: base64Data, type: 'base64' });\n\nreturn { json: { ...prevData, imgur_payload: imgurPayload } };"
+      },
+      "id": "parsear-base64",
+      "name": "Parsear Base64",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3536,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.imgur.com/3/image",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": ""
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.imgur_payload }}",
+        "options": {}
+      },
+      "id": "http-imgur",
+      "name": "HTTP: Upload Imgur",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        3760,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const imgurResp = $json;\nconst prevData = $('Parsear Base64').item.json;\n\nif (!imgurResp.success) {\n  throw new Error('Imgur falhou: ' + JSON.stringify(imgurResp).substring(0, 200));\n}\n\nconst imageUrl = imgurResp.data.link;\n\nreturn { json: { ...prevData, image_url: imageUrl, imgur_payload: undefined } };"
+      },
+      "id": "parsear-url-imgur",
+      "name": "Parsear URL Imgur",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3984,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Expande 3 temas → 6 itens (linkedin + instagram por tema)\nconst items = $input.all();\nconst output = [];\n\nitems.forEach(item => {\n  const base = item.json;\n  // LinkedIn version\n  output.push({ json: {\n    ...base,\n    platform: 'linkedin',\n    doc_name: 'LinkedIn — ' + base.doc_name\n  }});\n  // Instagram version — mesma imagem\n  output.push({ json: {\n    ...base,\n    platform: 'instagram',\n    doc_name: 'Instagram — ' + base.doc_name\n  }});\n});\n\nreturn output;"
+      },
+      "id": "duplicar-plataforma",
+      "name": "Duplicar por Plataforma",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4208,
+        304
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Preparar: Buscar Vídeos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar: Buscar Vídeos": {
+      "main": [
+        [
+          {
+            "node": "HTTP: Buscar Vídeos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP: Buscar Vídeos": {
+      "main": [
+        [
+          {
+            "node": "Parsear Vídeos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsear Vídeos": {
+      "main": [
+        [
+          {
+            "node": "Preparar: Resumir Vídeos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar: Resumir Vídeos": {
+      "main": [
+        [
+          {
+            "node": "HTTP: Resumir Vídeos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP: Resumir Vídeos": {
+      "main": [
+        [
+          {
+            "node": "Parsear Resumos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsear Resumos": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Resumos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Resumos": {
+      "main": [
+        [
+          {
+            "node": "Preparar: Gerar Ideias",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar: Gerar Ideias": {
+      "main": [
+        [
+          {
+            "node": "HTTP: Gerar Ideias",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP: Gerar Ideias": {
+      "main": [
+        [
+          {
+            "node": "Parsear Ideias",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsear Ideias": {
+      "main": [
+        [
+          {
+            "node": "Preparar: Image Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar: Image Prompt": {
+      "main": [
+        [
+          {
+            "node": "HTTP: Gerar Image Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP: Gerar Image Prompt": {
+      "main": [
+        [
+          {
+            "node": "Parsear + Gerar URL Imagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsear + Gerar URL Imagem": {
+      "main": [
+        [
+          {
+            "node": "HTTP: Gerar Imagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: LinkedIn?": {
+      "main": [
+        [
+          {
+            "node": "Preparar: Agente LinkedIn",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar: Agente Instagram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar: Agente LinkedIn": {
+      "main": [
+        [
+          {
+            "node": "HTTP: Agente LinkedIn",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP: Agente LinkedIn": {
+      "main": [
+        [
+          {
+            "node": "Parsear Post LinkedIn",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsear Post LinkedIn": {
+      "main": [
+        [
+          {
+            "node": "Merge Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar: Agente Instagram": {
+      "main": [
+        [
+          {
+            "node": "HTTP: Agente Instagram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP: Agente Instagram": {
+      "main": [
+        [
+          {
+            "node": "Parsear Post Instagram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsear Post Instagram": {
+      "main": [
+        [
+          {
+            "node": "Merge Posts",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Posts": {
+      "main": [
+        [
+          {
+            "node": "Notion: Criar em Revisão",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Final": {
+      "main": [
+        [
+          {
+            "node": "Resumir Resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resumir Resultado": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notion: Criar em Revisão": {
+      "main": [
+        [
+          {
+            "node": "Prep: Conteúdo Revisão",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep: Conteúdo Revisão": {
+      "main": [
+        [
+          {
+            "node": "HTTP: Adicionar Conteúdo Revisão",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP: Adicionar Conteúdo Revisão": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP: Gerar Imagem": {
+      "main": [
+        [
+          {
+            "node": "Parsear Base64",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsear Base64": {
+      "main": [
+        [
+          {
+            "node": "HTTP: Upload Imgur",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP: Upload Imgur": {
+      "main": [
+        [
+          {
+            "node": "Parsear URL Imgur",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsear URL Imgur": {
+      "main": [
+        [
+          {
+            "node": "Duplicar por Plataforma",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Duplicar por Plataforma": {
+      "main": [
+        [
+          {
+            "node": "IF: LinkedIn?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "",
+  "meta": {
+    "instanceId": ""
+  },
+  "id": "",
+  "tags": []
+}
